@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Keno & የኪስ ቦርሳ</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg: var(--tg-theme-bg-color, #0f172a);
+            --card-bg: var(--tg-theme-secondary-bg-color, #1e293b);
+            --text: var(--tg-theme-text-color, #f8fafc);
+            --hint: var(--tg-theme-hint-color, #94a3b8);
+            --btn: var(--tg-theme-button-color, #3b82f6);
+            --btn-text: var(--tg-theme-button-text-color, #ffffff);
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warn: #f59e0b;
+        }
+        * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+        body {
+            margin: 0;
+            padding: 16px;
+            background: var(--bg);
+            color: var(--text);
+            padding-bottom: 40px;
+        }
+        .card {
+            background: var(--card-bg);
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 14px;
+        }
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            text-align: center;
+            padding: 12px;
+        }
+        .stat-num { font-size: 18px; font-weight: 700; }
+        .stat-label { font-size: 11px; color: var(--hint); margin-top: 3px; }
+        .balance-label { font-size: 13px; color: var(--hint); }
+        .balance-value { font-size: 30px; font-weight: 700; margin: 6px 0; }
+        .status-note { font-size: 13px; color: var(--warn); margin-top: 4px; }
+        .status-ok { color: var(--success); }
+        .tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 14px; }
+        .tab-btn {
+            padding: 10px 2px;
+            border: none;
+            border-radius: 8px;
+            background: var(--card-bg);
+            color: var(--hint);
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+        }
+        .tab-btn.active {
+            background: var(--btn);
+            color: var(--btn-text);
+        }
+        label { display: block; font-size: 13px; color: var(--hint); margin: 10px 0 6px; }
+        input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            background: var(--bg);
+            color: var(--text);
+            font-size: 15px;
+        }
+        button.submit-btn {
+            width: 100%;
+            margin-top: 14px;
+            padding: 13px;
+            border: none;
+            border-radius: 10px;
+            background: var(--btn);
+            color: var(--btn-text);
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .alert {
+            padding: 10px 12px;
+            border-radius: 10px;
+            font-size: 13px;
+            margin-bottom: 12px;
+            display: none;
+        }
+        .alert.error { display: block; background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+        .alert.success { display: block; background: rgba(34, 197, 94, 0.15); color: var(--success); }
+        .keno-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 5px;
+            margin: 10px 0;
+        }
+        .keno-num {
+            padding: 8px 0;
+            border-radius: 6px;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: var(--bg);
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .keno-num.selected { background: var(--btn); color: #fff; border-color: var(--btn); }
+        .keno-num.drawn { background: rgba(245, 158, 11, 0.35); border-color: var(--warn); }
+        .keno-num.hit { background: var(--success); color: #fff; border-color: var(--success); }
+        .actions-row { display: flex; gap: 8px; margin-top: 8px; }
+        .tx-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+            font-size: 13px;
+        }
+        .tx-item:last-child { border-bottom: none; }
+        .tx-sub { font-size: 11px; color: var(--hint); margin-top: 2px; }
+        .badge {
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge.PENDING { background: rgba(245, 158, 11, 0.2); color: var(--warn); }
+        .badge.APPROVED, .badge.COMPLETED { background: rgba(34, 197, 94, 0.2); color: var(--success); }
+        .badge.REJECTED { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="alertBox" class="alert"></div>
+
+    <!-- የተጠቃሚዎች ብዛት ማሳያ -->
+    <div class="card stats-bar">
+        <div>
+            <div class="stat-num" id="statTotalUsers">--</div>
+            <div class="stat-label">ጠቅላላ ተጠቃሚ</div>
+        </div>
+        <div>
+            <div class="stat-num" id="statActive24h">--</div>
+            <div class="stat-label">የ24 ሰዓት ተጠቃሚ</div>
+        </div>
+        <div>
+            <div class="stat-num status-ok" id="statOnlineNow">--</div>
+            <div class="stat-label">አሁን በመስመር ላይ</div>
+        </div>
+    </div>
+
+    <!-- የቀሪ ሂሳብ ካርድ -->
+    <div class="card">
+        <div class="balance-label">ቀሪ ሂሳብ</div>
+        <div id="balanceDisplay" class="balance-value">-- ብር</div>
+        <div id="withdrawRule" class="status-note">በመጫን ላይ...</div>
+        <div id="dailyLimitInfo" class="tx-sub" style="margin-top:6px;"></div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('keno', this)">Keno</button>
+        <button class="tab-btn" onclick="switchTab('deposit', this)">ማስገባት</button>
+        <button class="tab-btn" onclick="switchTab('withdraw', this)">ማውጣት</button>
+        <button class="tab-btn" onclick="switchTab('referral', this)">ጓደኞች</button>
+        <button class="tab-btn" onclick="switchTab('history', this)">ታሪክ</button>
+    </div>
+
+    <!-- Keno ጨዋታ -->
+    <div id="tab-keno" class="card">
+        <div style="display:flex; justify-content:space-between; font-size:13px;">
+            <span id="kenoPickCount">የመረጡት: 0 / 5</span>
+            <span id="kenoPayInfo" style="color:var(--warn);">1-5 ቁጥር ይምረጡ</span>
+        </div>
+        <div id="kenoGrid" class="keno-grid"></div>
+        <div class="actions-row">
+            <button class="tab-btn" type="button" onclick="luckyPick()" style="flex:1; padding:10px; background:rgba(59,130,246,0.15); color:var(--btn);">ዕድለኛ ምርጫ (Lucky Pick)</button>
+            <button class="tab-btn" type="button" onclick="clearKeno()" style="flex:1; padding:10px; background:rgba(239,68,68,0.15); color:var(--danger);">ሁሉንም አጥፋ</button>
+        </div>
+        <label for="kenoBet">መወራረጃ (5 - 500 ብር)</label>
+        <input id="kenoBet" type="number" step="1" min="5" max="500" value="5">
+        <button id="kenoPlayBtn" class="submit-btn" type="button">ተጫወት (Play Keno)</button>
+        <div id="kenoResult" class="status-note" style="margin-top:10px; font-weight:600;"></div>
+    </div>
+
+    <!-- ብር ማስገቢያ -->
+    <div id="tab-deposit" class="card hidden">
+        <form id="depositForm">
+            <label for="depAmount">የገንዘብ መጠን (ዝቅተኛው 50 ብር)</label>
+            <input id="depAmount" type="number" step="0.01" min="50" max="100000" placeholder="ለምሳሌ፡ 100" required>
+
+            <label for="depTxId">የትራንዛክሽን መለያ (TxID)</label>
+            <input id="depTxId" type="text" minlength="4" maxlength="50" placeholder="ለምሳሌ፡ B12345XYZ" required>
+
+            <div id="depFeePreview" class="status-note" style="margin-top:10px;">
+                ዝቅተኛው ማስገቢያ 50 ብር ነው፤ ከገቢ ላይ 2.5% የአገልግሎት ክፍያ ይቀነሳል።
+            </div>
+
+            <button id="depBtn" class="submit-btn" type="submit">የማስገቢያ ጥያቄ ላክ</button>
+        </form>
+    </div>
+
+    <!-- ብር ማውጫ -->
+    <div id="tab-withdraw" class="card hidden">
+        <form id="withdrawForm">
+            <label for="wdAmount">የማውጫ መጠን (300 - 5,000 ብር፣ ሙሉ ቁጥር)</label>
+            <input id="wdAmount" type="number" step="1" min="300" max="5000" placeholder="ለምሳሌ፡ 500" required>
+
+            <label for="wdPhone">የቴሌብር / ስልክ ቁጥር (09 ወይም 07)</label>
+            <input id="wdPhone" type="tel" placeholder="0911223344 ወይም 0711223344" required>
+
+            <div id="feePreview" class="status-note" style="margin-top:10px;">
+                ከወጪ ላይ 5% የአገልግሎት ክፍያ ይቀነሳል።
+            </div>
+
+            <button id="wdBtn" class="submit-btn" type="submit">ብር አውጣ</button>
+        </form>
+    </div>
+
+    <!-- ጓደኞች መጋበዣ / ሪፈራል -->
+    <div id="tab-referral" class="card hidden">
+        <div class="balance-label" style="margin-bottom:6px;">ጓደኞችዎን በመጋበዝ ይሸለሙ!</div>
+        <div class="tx-sub" style="margin-bottom:12px;">ሰዎችን ወደ አፑ ሲጋብዙ ከሚያስገቡት ገንዘብ የተወሰነ መቶኛ ቦነስ ያግኙ።</div>
+        
+        <label for="refLinkInput">የእርስዎ ማስተላለፊያ ሊንክ (Referral Link)</label>
+        <div style="display:flex; gap:8px;">
+            <input id="refLinkInput" type="text" readonly value="https://t.me/YourBotName?start=ref_12345">
+            <button type="button" class="tab-btn" onclick="copyRefLink()" style="padding:0 16px; background:var(--btn); color:#fff; font-size:13px;">ኮፒ አድርግ</button>
+        </div>
+        
+        <div style="margin-top:16px; display:grid; grid-template-columns: 1fr 1fr; gap:8px; text-align:center;">
+            <div style="background:var(--bg); padding:10px; border-radius:8px;">
+                <div class="stat-num" id="refCount">0</div>
+                <div class="stat-label">የጋበዟቸው ሰዎች</div>
+            </div>
+            <div style="background:var(--bg); padding:10px; border-radius:8px;">
+                <div class="stat-num status-ok" id="refEarned">0.00 ብር</div>
+                <div class="stat-label">ያገኙት ቦነስ</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- የግብይት ታሪክ -->
+    <div id="tab-history" class="card hidden">
+        <div class="balance-label" style="margin-bottom:8px;">የቅርብ ጊዜ ማስገቢያዎች</div>
+        <div id="depositHistory">ምንም ታሪክ የለም</div>
+
+        <div class="balance-label" style="margin:14px 0 8px;">የቅርብ ጊዜ ማውጫዎች</div>
+        <div id="withdrawHistory">ምንም ታሪክ የለም</div>
+    </div>
+
+<script>
+    const API_BASE = 'https://YOUR-BACKEND-DOMAIN.com';
+
+    const tg = window.Telegram && window.Telegram.WebApp;
+    let jwtToken = null;
+
+    const KENO_PAYTABLE_UI = {
+        1: '1 ከገባ = 3x',
+        2: '2 ከገባ = 12x',
+        3: '2 ከገባ = 2x | 3 ከገባ = 35x',
+        4: '2=1.5x | 3=5x | 4=75x',
+        5: '3=3x | 4=15x | 5=500x'
+    };
+    let selectedKeno = new Set();
+
+    function haptic(type = 'light') {
+        if (tg && tg.HapticFeedback) {
+            tg.HapticFeedback.impactOccurred(type);
+        }
+    }
+
+    function showAlert(msg, type) {
+        const box = document.getElementById('alertBox');
+        box.textContent = msg;
+        box.className = 'alert ' + type;
+    }
+
+    function clearAlert() {
+        const box = document.getElementById('alertBox');
+        box.className = 'alert';
+        box.textContent = '';
+    }
+
+    function switchTab(name, btn) {
+        haptic('light');
+        clearAlert();
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        ['keno', 'deposit', 'withdraw', 'referral', 'history'].forEach(t => {
+            document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
+        });
+    }
+
+    function formatRemaining(sec) {
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        return `ለማውጣት ${h} ሰዓት ከ ${m} ደቂቃ ቀርቷል`;
+    }
+
+    function renderList(containerId, items, type) {
+        const container = document.getElementById(containerId);
+        container.textContent = '';
+
+        if (!items || items.length === 0) {
+            container.textContent = 'ምንም ታሪክ የለም';
+            return;
+        }
+
+        items.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'tx-item';
+
+            const left = document.createElement('div');
+            const title = document.createElement('div');
+            const birr = (item.amount_santim / 100).toFixed(2);
+
+            if (type === 'deposit' && item.net_santim > 0) {
+                const netBirr = (item.net_santim / 100).toFixed(2);
+                title.textContent = `ገቢ ${netBirr} ብር (ከ ${birr} ብር)`;
+            } else if (type === 'withdraw' && item.net_santim > 0) {
+                const netBirr = (item.net_santim / 100).toFixed(2);
+                title.textContent = `የሚደርስዎ ${netBirr} ብር (ከ ${birr} ብር)`;
+            } else {
+                title.textContent = `${birr} ብር`;
+            }
+
+            const sub = document.createElement('div');
+            sub.className = 'tx-sub';
+            const dateStr = new Date(item.created_at * 1000).toLocaleString();
+            sub.textContent = type === 'deposit'
+                ? `TxID: ${item.tx_id} • ${dateStr}`
+                : `#${item.id} • ${item.phone} • ${dateStr}`;
+
+            left.appendChild(title);
+            left.appendChild(sub);
+
+            const badge = document.createElement('span');
+            badge.className = `badge ${item.status}`;
+            badge.textContent = item.status;
+
+            row.appendChild(left);
+            row.appendChild(badge);
+            container.appendChild(row);
+        });
+    }
+
+    async function apiRequest(path, options = {}) {
+        const headers = Object.assign(
+            { 'Content-Type': 'application/json' },
+            jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {},
+            options.headers || {}
+        );
+
+        const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+        const data = await res.json().catch(() => ({ success: false, message: 'የሰርቨር ምላሽ ስህተት' }));
+
+        if (!res.ok) {
+            throw new Error(data.message || 'ስህተት ተፈጥሯል');
+        }
+        return data;
+    }
+
+    async function loadBalance() {
+        const data = await apiRequest('/api/balance', { method: 'GET' });
+        document.getElementById('balanceDisplay').textContent = `${data.balanceBirr} ብር`;
+
+        const ruleEl = document.getElementById('withdrawRule');
+        if (data.canWithdraw) {
+            ruleEl.textContent = 'ብር ማውጣት ይችላሉ';
+            ruleEl.className = 'status-note status-ok';
+        } else {
+            ruleEl.textContent = formatRemaining(data.remainingSeconds);
+            ruleEl.className = 'status-note';
+        }
+
+        document.getElementById('dailyLimitInfo').textContent =
+            `ዛሬ የቀረዎት የማውጫ ገደብ: ${data.remainingDailyLimitBirr} ብር (ከ 5,000.00 ብር)`;
+
+        if (data.userStats) {
+            document.getElementById('statTotalUsers').textContent = data.userStats.totalUsers.toLocaleString();
+            document.getElementById('statActive24h').textContent = data.userStats.active24h.toLocaleString();
+            document.getElementById('statOnlineNow').textContent = data.userStats.onlineNow.toLocaleString();
+        }
+
+        if (data.referralInfo) {
+            document.getElementById('refLinkInput').value = data.referralInfo.link;
+            document.getElementById('refCount').textContent = data.referralInfo.count;
+            document.getElementById('refEarned').textContent = `${data.referralInfo.earnedBirr} ብር`;
+        }
+
+        renderList('depositHistory', data.deposits, 'deposit');
+        renderList('withdrawHistory', data.withdrawals, 'withdraw');
+    }
+
+    function buildKenoGrid() {
+        const grid = document.getElementById('kenoGrid');
+        grid.textContent = '';
+        for (let i = 1; i <= 80; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'keno-num';
+            cell.textContent = String(i);
+            cell.dataset.num = String(i);
+            cell.addEventListener('click', () => toggleKenoNum(i));
+            grid.appendChild(cell);
+        }
+    }
+
+    function toggleKenoNum(num) {
+        haptic('light');
+        document.querySelectorAll('.keno-num').forEach(c => c.classList.remove('drawn', 'hit'));
+        if (selectedKeno.has(num)) {
+            selectedKeno.delete(num);
+        } else {
+            if (selectedKeno.size >= 5) {
+                haptic('error');
+                showAlert('ከ 5 ቁጥር በላይ መምረጥ አይቻልም!', 'error');
+                return;
+            }
+            selectedKeno.add(num);
+        }
+        clearAlert();
+        updateKenoUI();
+    }
+
+    function updateKenoUI() {
+        document.querySelectorAll('.keno-num').forEach(c => {
+            c.classList.toggle('selected', selectedKeno.has(Number(c.dataset.num)));
+        });
+        document.getElementById('kenoPickCount').textContent = `የመረጡት: ${selectedKeno.size} / 5`;
+        document.getElementById('kenoPayInfo').textContent = KENO_PAYTABLE_UI[selectedKeno.size] || '1-5 ቁጥር ይምረጡ';
+    }
+
+    function luckyPick() {
+        haptic('medium');
+        selectedKeno.clear();
+        while (selectedKeno.size < 5) {
+            const rand = Math.floor(Math.random() * 80) + 1;
+            selectedKeno.add(rand);
+        }
+        clearAlert();
+        updateKenoUI();
+    }
+
+    function clearKeno() {
+        haptic('light');
+        selectedKeno.clear();
+        clearAlert();
+        updateKenoUI();
+        document.getElementById('kenoResult').textContent = '';
+    }
+
+    function copyRefLink() {
+        haptic('medium');
+        const input = document.getElementById('refLinkInput');
+        input.select();
+        input.setSelectionRange(0, 99999);
+        navigator.clipboard.writeText(input.value);
+        showAlert('ማስተላለፊያ ሊንኩ ተኮርጇል!', 'success');
+    }
+
+    document.getElementById('kenoPlayBtn').addEventListener('click', async () => {
+        haptic('medium');
+        clearAlert();
+        if (selectedKeno.size < 1) {
+            showAlert('ቢያንስ 1 ቁጥር ይምረጡ!', 'error');
+            return;
+        }
+        const btn = document.getElementById('kenoPlayBtn');
+        const resultEl = document.getElementById('kenoResult');
+        btn.disabled = true;
+
+        try {
+            const bet = document.getElementById('kenoBet').value.trim();
+            const res = await apiRequest('/api/keno/play', {
+                method: 'POST',
+                body: JSON.stringify({ bet, picks: Array.from(selectedKeno) })
+            });
+
+            const drawnSet = new Set(res.drawn);
+            const hitSet = new Set(res.hits);
+            document.querySelectorAll('.keno-num').forEach(c => {
+                const n = Number(c.dataset.num);
+                c.classList.remove('drawn', 'hit');
+                if (hitSet.has(n)) c.classList.add('hit');
+                else if (drawnSet.has(n)) c.classList.add('drawn');
+            });
+
+            document.getElementById('balanceDisplay').textContent = `${res.balanceBirr} ብር`;
+            if (parseFloat(res.payoutBirr) > 0) {
+                haptic('success');
+                resultEl.textContent = `🎉 እንኳን ደስ አለዎት! ${res.hits.length} ቁጥር አስገብተው ${res.payoutBirr} ብር አሸንፈዋል!`;
+                resultEl.className = 'status-note status-ok';
+            } else {
+                haptic('heavy');
+                resultEl.textContent = `ያገኙት: ${res.hits.length} ቁጥር — በሚቀጥለው ይሞክሩ!`;
+                resultEl.className = 'status-note';
+            }
+        } catch (err) {
+            haptic('error');
+            showAlert(err.message, 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    document.getElementById('depAmount').addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        const preview = document.getElementById('depFeePreview');
+        if (!isNaN(val) && val >= 50) {
+            const santim = Math.round(val * 100);
+            const feeSantim = Math.round((santim * 25) / 1000);
+            const netSantim = santim - feeSantim;
+            preview.textContent = `2.5% ክፍያ: ${(feeSantim / 100).toFixed(2)} ብር | ሂሳብዎ ውስጥ የሚገባው: ${(netSantim / 100).toFixed(2)} ብር`;
+        } else {
+            preview.textContent = 'ዝቅተኛው ማስገቢያ 50 ብር ነው፤ ከገቢ ላይ 2.5% የአገልግሎት ክፍያ ይቀነሳል።';
+        }
+    });
+
+    document.getElementById('wdAmount').addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        const preview = document.getElementById('feePreview');
+        if (!isNaN(val) && val > 0) {
+            const fee = (val * 0.05).toFixed(2);
+            const net = (val - parseFloat(fee)).toFixed(2);
+            preview.textContent = `5% ክፍያ: ${fee} ብር | የሚደርስዎ: ${net} ብር`;
+        } else {
+            preview.textContent = 'ከወጪ ላይ 5% የአገልግሎት ክፍያ ይቀነሳል።';
+        }
+    });
+
+    document.getElementById('depositForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        haptic('medium');
+        clearAlert();
+        const btn = document.getElementById('depBtn');
+        btn.disabled = true;
+
+        try {
+            const amount = document.getElementById('depAmount').value.trim();
+            const txId = document.getElementById('depTxId').value.trim();
+
+            const res = await apiRequest('/api/deposit', {
+                method: 'POST',
+                body: JSON.stringify({ amount, txId })
+            });
+            haptic('success');
+            showAlert(res.message, 'success');
+            e.target.reset();
+            document.getElementById('depFeePreview').textContent = 'ዝቅተኛው ማስገቢያ 50 ብር ነው፤ ከገቢ ላይ 2.5% የአገልግሎት ክፍያ ይቀነሳል።';
+            await loadBalance();
+        } catch (err) {
+            haptic('error');
+            showAlert(err.message, 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    document.getElementById('withdrawForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        haptic('medium');
+        clearAlert();
+        const btn = document.getElementById('wdBtn');
+        btn.disabled = true;
+
+        try {
+            const amount = document.getElementById('wdAmount').value.trim();
+            const phone = document.getElementById('wdPhone').value.trim();
+
+            const res = await apiRequest('/api/withdraw', {
+                method: 'POST',
+                body: JSON.stringify({ amount, phone })
+            });
+            haptic('success');
+            showAlert(res.message, 'success');
+            e.target.reset();
+            document.getElementById('feePreview').textContent = 'ከወጪ ላይ 5% የአገልግሎት ክፍያ ይቀነሳል።';
+            await loadBalance();
+        } catch (err) {
+            haptic('error');
+            showAlert(err.message, 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    async function initApp() {
+        buildKenoGrid();
+        if (!tg || !tg.initData) {
+            showAlert('እባክዎ ይህን አፕ በቴሌግራም Mini App ውስጥ ይክፈቱት።', 'error');
+            return;
+        }
+        tg.ready();
+        tg.expand();
+
+        try {
+            const authData = await apiRequest('/api/auth', {
+                method: 'POST',
+                body: JSON.stringify({ initData: tg.initData })
+            });
+            jwtToken = authData.token;
+            await loadBalance();
+        } catch (err) {
+            showAlert(err.message, 'error');
+        }
+    }
+
+    initApp();
+</script>
+</body>
+</html>
+
